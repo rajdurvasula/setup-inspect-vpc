@@ -1,0 +1,425 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Template for Inspection VPC, NFW in 2 AZs"
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: VPC Details
+        Parameters:
+          - SelectAZ1
+          - SelectAZ2
+          - InspectionVpcCidr
+          - TransitGatewayId
+      - Label:
+          default: Lambda Details
+        Parameters:
+          - S3BucketParam
+          - S3KeyParam1
+          - S3KeyParam2
+Parameters:
+  SelectAZ1:
+    Type: AWS::EC2::AvailabilityZone::Name
+    Default: us-east-1a
+  SelectAZ2:
+    Type: AWS::EC2::AvailabilityZone::Name
+    Default: us-east-1b
+  InspectionVpcCidr:
+    Type: String
+    Description: Inspection VPC CIDR
+    Default: '172.31.0.0/16'
+  TransitGatewayId:
+    Type: String
+    Description: Transit Gateway Id
+  S3BucketParam:
+    Type: String
+    Description: S3 Bucket for Lambda packages
+    Default: 'sh-network-dev-bucket1'
+  S3KeyParam1:
+    Type: String
+    Description: S3 Key for Lambda package to generate CIDRs
+    Default: 'calc_cidr.zip'
+  S3KeyParam2:
+    Type: String
+    Description: S3 Key for Lambda package to get VPCE Ids
+    Default: 'retrieve_vpceids.zip'
+Resources:
+  InspectVpcId:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref InspectionVpcCidr
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      InstanceTenancy: default
+      Tags:
+        - Key: Name
+          Value: 'inspect-vpc01'
+  VpcLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: '/'
+      RoleName: !Sub '${AWS::StackName}-VpcLambdaRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonEC2FullAccess'
+      Policies:
+        - PolicyName: !Sub '${AWS::StackName}-CWLogs-Min'
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'logs:PutLogEvents'
+                Resource:
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:*:log-stream:*'
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogStream'
+                  - 'logs:CreateLogGroup'
+                Resource:
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:*'
+        - PolicyName: !Sub '${AWS::StackName}-NW-Min'
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'network-firewall:DescribeFirewall'
+                Resource:
+                  - !Sub 'arn:aws:network-firewall:${AWS::Region}:${AWS::AccountId}:firewall/*'
+      Tags:
+        - Key: Owner
+          Value: 'rajasekhar.durvasula'
+  CalcCidrLambda:
+    Type: AWS::Lambda::Function
+    UpdateReplacePolicy: Delete
+    DependsOn:
+      - VpcLambdaRole
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-CalcCidr'
+      Handler:  'calc_cidr.lambda_handler'
+      Role: !Sub 'arn:aws:iam::${AWS::AccountId}:role/${VpcLambdaRole}'
+      Code:
+        S3Bucket: !Ref S3BucketParam
+        S3Key: !Ref S3KeyParam1
+      Runtime: python3.9
+      MemorySize: 256
+      Timeout: 60
+      Environment:
+        Variables:
+          log_level: INFO
+      Tags:
+        - Key: Owner
+          Value: 'rajasekhar.durvasula'
+  RunCalcCidr:
+    Type: Custom::RunCalcCidr
+    DependsOn:
+      - CalcCidrLambda
+    Properties:
+      ServiceToken: !GetAtt CalcCidrLambda.Arn
+      vpc_id: !Ref InspectVpcId
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId:
+        Ref: InspectVpcId
+      CidrBlock: !GetAtt RunCalcCidr.pub_subnet_1
+      AvailabilityZone:
+        Ref: SelectAZ1
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-pub1"
+        - Key: Purpose
+          Value: public
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId:
+        Ref: InspectVpcId
+      CidrBlock: !GetAtt RunCalcCidr.pub_subnet_2
+      AvailabilityZone:
+        Ref: SelectAZ2
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-pub2"
+        - Key: Purpose
+          Value: public          
+  TGWSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId:
+        Ref: InspectVpcId
+      CidrBlock: !GetAtt RunCalcCidr.tgw_subnet_1
+      AvailabilityZone:
+        Ref: SelectAZ1
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-tgw1"
+        - Key: Purpose
+          Value: tgw
+  TGWSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId:
+        Ref: InspectVpcId
+      CidrBlock: !GetAtt RunCalcCidr.tgw_subnet_2
+      AvailabilityZone:
+        Ref: SelectAZ2
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-tgw2"
+        - Key: Purpose
+          Value: tgw
+  FirewallSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId:
+        Ref: InspectVpcId
+      CidrBlock: !GetAtt RunCalcCidr.fw_subnet_1
+      AvailabilityZone:
+        Ref: SelectAZ1
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-fw1"
+        - Key: Purpose
+          Value: firewall
+  FirewallSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId:
+        Ref: InspectVpcId
+      CidrBlock: !GetAtt RunCalcCidr.fw_subnet_2
+      AvailabilityZone:
+        Ref: SelectAZ2
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-fw2"
+        - Key: Purpose
+          Value: firewall
+  # NFW Rule Groups here
+  # Add dependency to NFW Policy
+  # Add NFW Rule Groups References to NFW Policy
+  EgressFirewallPolicy:
+    Type: AWS::NetworkFirewall::FirewallPolicy
+    Properties:
+      FirewallPolicyName: !Sub '${AWS::StackName}-egress-policy'
+      FirewallPolicy:
+        StatelessDefaultActions:
+          - 'aws:forward_to_sfe'
+        StatelessFragmentDefaultActions:
+          - 'aws:forward_to_sfe'
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-egress-policy'
+        - Key: Owner
+          Value: 'rajasekhar.durvasula'
+  EgressFW:
+    Type: AWS::NetworkFirewall::Firewall
+    DependsOn:
+      - EgressFirewallPolicy
+    Properties:
+      DeleteProtection: false
+      Description: Central IDS IPS firewall in shared network
+      FirewallName: !Sub "${AWS::StackName}-nfw-egress"
+      FirewallPolicyArn: !Ref EgressFirewallPolicy
+      FirewallPolicyChangeProtection: false
+      VpcId: !Ref InspectVpcId
+      SubnetMappings:
+        - SubnetId: !Ref FirewallSubnet1
+        - SubnetId: !Ref FirewallSubnet2
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-nfw-egress"
+        - Key: Owner
+          Value: 'rajasekhar.durvasula'
+  EgressFWFlowLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/${AWS::StackName}/anfw/flow'
+  EgressFWFAlertLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/${AWS::StackName}/anfw/alert'
+  EgressFWLogConfig:
+    Type: AWS::NetworkFirewall::LoggingConfiguration
+    Properties:
+      FirewallArn: !Ref EgressFW
+      LoggingConfiguration:
+        LogDestinationConfigs:
+          - LogType: FLOW
+            LogDestinationType: CloudWatchLogs
+            LogDestination:
+              logGroup: !Sub '/${AWS::StackName}/anfw/flow'
+          - LogType: ALERT
+            LogDestinationType: CloudWatchLogs
+            LogDestination:
+              logGroup: !Sub '/${AWS::StackName}/anfw/alert'
+  RetrieveVpceIds:
+    Type: AWS::Lambda::Function
+    DependsOn:
+      - VpcLambdaRole
+      - EgressFW
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-RetrieveVpceIds'
+      Handler: 'retrieve_vpceids.lambda_handler'
+      Role: !Sub 'arn:aws:iam::${AWS::AccountId}:role/${VpcLambdaRole}'
+      Code:
+        S3Bucket: !Ref S3BucketParam
+        S3Key: !Ref S3KeyParam2
+      Runtime: python3.9
+      MemorySize: 256
+      Timeout: 60
+      Environment:
+        Variables:
+          log_level: INFO
+  FirewallVpceIds:
+    Type: Custom::DescribeVpcEndpoints
+    DependsOn:
+      - EgressFW
+      - RetrieveVpceIds
+    Properties:
+      ServiceToken: !GetAtt RetrieveVpceIds.Arn
+      Az1: !Ref SelectAZ1
+      Az2: !Ref SelectAZ2
+      FwArn: !Ref EgressFW
+  TGWRtb1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref InspectVpcId
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-tgw-1'
+        - Key: Purpose
+          Value: tgw
+  TGWRtb1Assoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    DependsOn:
+      - TGWSubnet1
+    Properties:
+      RouteTableId: !Ref TGWRtb1
+      SubnetId: !Ref TGWSubnet1
+  TGWRtb1Route1:
+    Type: AWS::EC2::Route
+    DependsOn:
+      - TGWRtb1Assoc
+      - RetrieveVpceIds
+    Properties:
+      DestinationCidrBlock: '0.0.0.0/0'
+      VpcEndpointId: !GetAtt FirewallVpceIds.FwVpceId1
+      RouteTableId: !Ref TGWRtb1
+  TGWRtb2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref InspectVpcId
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-tgw-2'
+        - Key: Purpose
+          Value: tgw
+  TGWRtb2Assoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    DependsOn:
+      - TGWSubnet2
+    Properties:
+      RouteTableId: !Ref TGWRtb2
+      SubnetId: !Ref TGWSubnet2
+  TGWRtb2Route1:
+    Type: AWS::EC2::Route
+    DependsOn:
+      - TGWRtb2Assoc
+      - RetrieveVpceIds
+    Properties:
+      DestinationCidrBlock: '0.0.0.0/0'
+      VpcEndpointId: !GetAtt FirewallVpceIds.FwVpceId2
+      RouteTableId: !Ref TGWRtb2
+  InspectVpcTransitAttachment:
+    Type: AWS::EC2::TransitGatewayVpcAttachment
+    DependsOn:
+      - TGWRtb1Assoc
+      - TGWRtb2Assoc
+    Properties:
+      SubnetIds:
+        - !Ref TGWSubnet1
+        - !Ref TGWSubnet2
+      Tags:
+        - Key: Name
+          Value: 'inspect-vpc01-attach'
+      TransitGatewayId: !Ref TransitGatewayId
+      VpcId: !Ref InspectVpcId
+  PublicRtb1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref InspectVpcId
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-pub-1'
+        - Key: Purpose
+          Value: public
+  PublicRtb1Assoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    DependsOn:
+      - PublicSubnet1
+    Properties:
+      RouteTableId: !Ref PublicRtb1
+      SubnetId: !Ref PublicSubnet1
+  PublicRtb2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref InspectVpcId
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-pub-2'
+        - Key: Purpose
+          Value: public
+  PublicRtb2Assoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    DependsOn:
+      - PublicSubnet2
+    Properties:
+      RouteTableId: !Ref PublicRtb2
+      SubnetId: !Ref PublicSubnet2
+  FirewallRtb1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref InspectVpcId
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-firewall-1'
+        - Key: Purpose
+          Value: firewall
+  FirewallRtb1Assoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    DependsOn:
+      - FirewallSubnet1
+    Properties:
+      RouteTableId: !Ref FirewallRtb1
+      SubnetId: !Ref FirewallSubnet1
+  FirewallRtb2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref InspectVpcId
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-firewall-2'
+        - Key: Purpose
+          Value: firewall
+  FirewallRtb2Assoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    DependsOn:
+      - FirewallSubnet2
+    Properties:
+      RouteTableId: !Ref FirewallRtb2
+      SubnetId: !Ref FirewallSubnet2

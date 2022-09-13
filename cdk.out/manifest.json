@@ -1,0 +1,130 @@
+{
+  "version": "20.0.0",
+  "artifacts": {
+    "Tree": {
+      "type": "cdk:tree",
+      "properties": {
+        "file": "tree.json"
+      }
+    },
+    "InspectVpcNfwStack.assets": {
+      "type": "cdk:asset-manifest",
+      "properties": {
+        "file": "InspectVpcNfwStack.assets.json",
+        "requiresBootstrapStackVersion": 6,
+        "bootstrapStackVersionSsmParameter": "/cdk-bootstrap/hnb659fds/version"
+      }
+    },
+    "InspectVpcNfwStack": {
+      "type": "aws:cloudformation:stack",
+      "environment": "aws://unknown-account/unknown-region",
+      "properties": {
+        "templateFile": "InspectVpcNfwStack.template.json",
+        "validateOnSynth": false,
+        "assumeRoleArn": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/cdk-hnb659fds-deploy-role-${AWS::AccountId}-${AWS::Region}",
+        "cloudFormationExecutionRoleArn": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/cdk-hnb659fds-cfn-exec-role-${AWS::AccountId}-${AWS::Region}",
+        "stackTemplateAssetObjectUrl": "s3://cdk-hnb659fds-assets-${AWS::AccountId}-${AWS::Region}/c5e0c0429caface1bcf133172406bd05ef6e95fce4fc31cdc7d19474ede9c8d1.json",
+        "requiresBootstrapStackVersion": 6,
+        "bootstrapStackVersionSsmParameter": "/cdk-bootstrap/hnb659fds/version",
+        "additionalDependencies": [
+          "InspectVpcNfwStack.assets"
+        ],
+        "lookupRole": {
+          "arn": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/cdk-hnb659fds-lookup-role-${AWS::AccountId}-${AWS::Region}",
+          "requiresBootstrapStackVersion": 8,
+          "bootstrapStackVersionSsmParameter": "/cdk-bootstrap/hnb659fds/version"
+        }
+      },
+      "dependencies": [
+        "InspectVpcNfwStack.assets"
+      ],
+      "metadata": {
+        "/InspectVpcNfwStack/iam-policy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "iampolicy6C93E3BF"
+          }
+        ],
+        "/InspectVpcNfwStack/cfn-policy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "cfnpolicy5C1835BC"
+          }
+        ],
+        "/InspectVpcNfwStack/lambda-policy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "lambdapolicyA5E98E09"
+          }
+        ],
+        "/InspectVpcNfwStack/nfw-policy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "nfwpolicy4A50D2F7"
+          }
+        ],
+        "/InspectVpcNfwStack/sc-inspectvpcnfw-endusers/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "scinspectvpcnfwendusers9CA08549"
+          }
+        ],
+        "/InspectVpcNfwStack/scenduserGroup0": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "scenduserGroup0"
+          }
+        ],
+        "/InspectVpcNfwStack/InspectVpcNfwPortfolio/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "InspectVpcNfwPortfolio03815BAD"
+          }
+        ],
+        "/InspectVpcNfwStack/InspectVpcNfwPortfolio/PortfolioProductAssociation6ab1d0361c2a": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "InspectVpcNfwPortfolioPortfolioProductAssociation6ab1d0361c2a5D22090B"
+          }
+        ],
+        "/InspectVpcNfwStack/InspectVpcNfwPortfolio/PortolioPrincipalAssociation30cb68b3bd0e": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "InspectVpcNfwPortfolioPortolioPrincipalAssociation30cb68b3bd0eB728CAE4"
+          }
+        ],
+        "/InspectVpcNfwStack/InspectVpcNfwProduct/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "InspectVpcNfwProduct4C3F5A35"
+          }
+        ],
+        "/InspectVpcNfwStack/CDKMetadata/Default": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CDKMetadata"
+          }
+        ],
+        "/InspectVpcNfwStack/CDKMetadata/Condition": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CDKMetadataAvailable"
+          }
+        ],
+        "/InspectVpcNfwStack/BootstrapVersion": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "BootstrapVersion"
+          }
+        ],
+        "/InspectVpcNfwStack/CheckBootstrapVersion": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CheckBootstrapVersion"
+          }
+        ]
+      },
+      "displayName": "InspectVpcNfwStack"
+    }
+  }
+}
